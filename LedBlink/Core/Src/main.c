@@ -21,18 +21,24 @@
 #include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
-
+/* USER CODE BEGIN Includes */
+#include <stdio.h>
+/* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
 
+/* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
 
+/* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
-#define DEF_SET 	1
-#define DEF_CLEAR 	0
+/* USER CODE BEGIN PM */
 
+/* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 /* Definitions for Blinkled */
@@ -49,8 +55,30 @@ const osThreadAttr_t UserInput_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityBelowNormal1,
 };
+/* Definitions for Buttonqueue */
+osMessageQueueId_t ButtonqueueHandle;
+const osMessageQueueAttr_t Buttonqueue_attributes = {
+  .name = "Buttonqueue"
+};
+/* Definitions for messagequeue */
+osMessageQueueId_t messagequeueHandle;
+const osMessageQueueAttr_t messagequeue_attributes = {
+  .name = "messagequeue"
+};
+/* USER CODE BEGIN PV */
+typedef enum
+{
+	EVENT_BUTTON_PRESSED,
+	EVENT_BUTTON_RELEASED
+}EVENT_TYPE;
 
-uint8_t ucButtonPress = DEF_CLEAR;
+typedef struct
+{
+	EVENT_TYPE event;
+	uint16_t usGpio;
+}BUTTON_EVENT;
+
+/* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -58,8 +86,14 @@ static void MX_GPIO_Init(void);
 void BlinkTask(void *argument);
 void UserInputTask(void *argument);
 
+/* USER CODE BEGIN PFP */
+
+/* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+/* USER CODE END 0 */
 
 /**
   * @brief  The application entry point.
@@ -68,25 +102,57 @@ void UserInputTask(void *argument);
 int main(void)
 {
 
+  /* USER CODE BEGIN 1 */
 
+  /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  /* USER CODE BEGIN 2 */
 
+  /* USER CODE END 2 */
 
   /* Init scheduler */
   osKernelInitialize();
 
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* Create the queue(s) */
+  /* creation of Buttonqueue */
+  ButtonqueueHandle = osMessageQueueNew (16, sizeof(uint8_t), &Buttonqueue_attributes);
+
+  /* creation of messagequeue */
+  messagequeueHandle = osMessageQueueNew (16, sizeof(uint8_t), &messagequeue_attributes);
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
   /* creation of Blinkled */
@@ -95,7 +161,13 @@ int main(void)
   /* creation of UserInput */
   UserInputHandle = osThreadNew(UserInputTask, NULL, &UserInput_attributes);
 
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
 
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
   osKernelStart();
@@ -103,10 +175,14 @@ int main(void)
   /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
   while (1)
   {
+    /* USER CODE END WHILE */
 
+    /* USER CODE BEGIN 3 */
   }
+  /* USER CODE END 3 */
 }
 
 /**
@@ -155,6 +231,9 @@ void SystemClock_Config(void)
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+
+  /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
@@ -167,8 +246,8 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : Button_Pin */
   GPIO_InitStruct.Pin = Button_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(Button_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : USART_TX_Pin USART_RX_Pin */
@@ -184,51 +263,116 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+
+  /* USER CODE END MX_GPIO_Init_2 */
 }
 
+/* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	if (GPIO_Pin == GPIO_PIN_13)
+	{
+		uint8_t msg = 1; // simple event flag
+		osMessageQueuePut(ButtonqueueHandle, &msg, 0, 0); // ISR‑safe (timeout=0)
+	}
+}
 
+/* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_BlinkTask */
 /**
   * @brief  Function implementing the Blinkled thread.
   * @param  argument: Not used
   * @retval None
   */
+/* USER CODE END Header_BlinkTask */
 void BlinkTask(void *argument)
 {
+  /* USER CODE BEGIN 5 */
   /* Infinite loop */
-  for(;;)
-  {
-	  if(ucButtonPress == DEF_SET)
-	  {
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-		osDelay(500);
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-		osDelay(500);
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-		osDelay(500);
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-		ucButtonPress = DEF_CLEAR;
-	  }
-	  osDelay(500);
-  }
+	uint8_t msg;
+	uint32_t uiTaskCounter = 0;
+	for(;;)
+	{
+		if(osMessageQueueGet(messagequeueHandle, &msg, 0, osWaitForever) == osOK)
+		{ // Toggle LED when button event received
+		   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		   printf("Led Toggle\n");
+		}
+		else
+		{
+			printf(" Data Read from Message Queue failed\n");
+		}
+		uiTaskCounter++;
+		printf("BlinkTask Executed : %ld\n", uiTaskCounter);
+		osDelay(1000);
+	}
+  /* USER CODE END 5 */
 }
 
+/* USER CODE BEGIN Header_UserInputTask */
 /**
 * @brief Function implementing the UserInput thread.
 * @param argument: Not used
 * @retval None
 */
+/* USER CODE END Header_UserInputTask */
 void UserInputTask(void *argument)
 {
+  /* USER CODE BEGIN UserInputTask */
   /* Infinite loop */
-  for(;;)
-  {
-	if(HAL_GPIO_ReadPin(Button_GPIO_Port, Button_Pin) == GPIO_PIN_RESET)
+	uint8_t msg = 0;
+	uint32_t uiTaskCounter = 0;
+	for(;;)
 	{
-		ucButtonPress = DEF_SET;
+		if(osMessageQueueGet(ButtonqueueHandle, &msg, 0, osWaitForever) == osOK)
+		{
+			printf("Button Pressed\n");
+			if(osMessageQueuePut(messagequeueHandle, &msg, 0, osWaitForever) == osOK)
+			{
+				__NOP();
+			}
+			else
+			{
+				printf(" Data Send to Message Queue failed\n");
+			}
+		}
+		else
+		{
+			printf(" Data Read from Button Queue failed\n");
+		}
+		uiTaskCounter++;
+		printf("UserInputTask Executed : %ld\n", uiTaskCounter);
+		osDelay(1000);
 	}
-	osDelay(500);
-  }
+  /* USER CODE END UserInputTask */
+}
 
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM4 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM4)
+  {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
 }
 
 /**
@@ -237,12 +381,13 @@ void UserInputTask(void *argument)
   */
 void Error_Handler(void)
 {
+  /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
-
   }
+  /* USER CODE END Error_Handler_Debug */
 }
 
 #ifdef  USE_FULL_ASSERT
