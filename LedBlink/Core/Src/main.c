@@ -37,7 +37,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+//#define _USING_QUEUE_
+#define _USING_SEMAPHORE_
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -65,6 +66,16 @@ osMessageQueueId_t messagequeueHandle;
 const osMessageQueueAttr_t messagequeue_attributes = {
   .name = "messagequeue"
 };
+/* Definitions for Button_Sempahore */
+osSemaphoreId_t Button_SempahoreHandle;
+const osSemaphoreAttr_t Button_Sempahore_attributes = {
+  .name = "Button_Sempahore"
+};
+/* Definitions for Led_Sempahore */
+osSemaphoreId_t Led_SempahoreHandle;
+const osSemaphoreAttr_t Led_Sempahore_attributes = {
+  .name = "Led_Sempahore"
+};
 /* USER CODE BEGIN PV */
 typedef enum
 {
@@ -74,7 +85,7 @@ typedef enum
 
 typedef struct
 {
-	EVENT_TYPE event;
+	EVENT_TYPE event_type;
 	uint16_t usGpio;
 }BUTTON_EVENT;
 
@@ -134,6 +145,14 @@ int main(void)
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
+#ifdef _USING_SEMAPHORE_
+  /* Create the semaphores(s) */
+  /* creation of Button_Sempahore */
+  Button_SempahoreHandle = osSemaphoreNew(1, 1, &Button_Sempahore_attributes);
+
+  /* creation of Led_Sempahore */
+  Led_SempahoreHandle = osSemaphoreNew(1, 1, &Led_Sempahore_attributes);
+#endif
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -142,13 +161,14 @@ int main(void)
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
-
+#ifdef _USING_QUEUE_
   /* Create the queue(s) */
   /* creation of Buttonqueue */
   ButtonqueueHandle = osMessageQueueNew (16, sizeof(uint8_t), &Buttonqueue_attributes);
 
   /* creation of messagequeue */
-  messagequeueHandle = osMessageQueueNew (16, sizeof(uint8_t), &messagequeue_attributes);
+  messagequeueHandle = osMessageQueueNew (16, sizeof(uint16_t), &messagequeue_attributes);
+#endif
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -277,8 +297,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	if (GPIO_Pin == GPIO_PIN_13)
 	{
-		uint8_t msg = 1; // simple event flag
-		osMessageQueuePut(ButtonqueueHandle, &msg, 0, 0); // ISR‑safe (timeout=0)
+#ifdef _USING_QUEUE_
+		BUTTON_EVENT event = {EVENT_BUTTON_PRESSED, Button_Pin};
+		osMessageQueuePut(ButtonqueueHandle, &event, 0, 0); // ISR‑safe (timeout=0)
+#else
+		osSemaphoreRelease(Button_SempahoreHandle);
+#endif
 	}
 }
 
@@ -295,12 +319,13 @@ void BlinkTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
-	uint8_t msg;
+	BUTTON_EVENT event = {0, 0};
 	uint32_t uiTaskCounter = 0;
 	for(;;)
 	{
-		if(osMessageQueueGet(messagequeueHandle, &msg, 0, osWaitForever) == osOK)
-		{ // Toggle LED when button event received
+#ifdef _USING_QUEUE_
+		if(osMessageQueueGet(messagequeueHandle, &event, 0, osWaitForever) == osOK)
+		{
 		   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		   printf("Led Toggle\n");
 		}
@@ -308,6 +333,13 @@ void BlinkTask(void *argument)
 		{
 			printf(" Data Read from Message Queue failed\n");
 		}
+#else
+		if(osSemaphoreAcquire(Led_SempahoreHandle,osWaitForever) == osOK)
+		{
+			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+
+		}
+#endif
 		uiTaskCounter++;
 		printf("BlinkTask Executed : %ld\n", uiTaskCounter);
 		osDelay(1000);
@@ -326,26 +358,44 @@ void UserInputTask(void *argument)
 {
   /* USER CODE BEGIN UserInputTask */
   /* Infinite loop */
-	uint8_t msg = 0;
+	BUTTON_EVENT event = {0, 0};
 	uint32_t uiTaskCounter = 0;
 	for(;;)
 	{
-		if(osMessageQueueGet(ButtonqueueHandle, &msg, 0, osWaitForever) == osOK)
+
+#ifdef _USING_QUEUE_
+		if(osMessageQueueGet(ButtonqueueHandle, &event, 0, osWaitForever) == osOK)
 		{
-			printf("Button Pressed\n");
-			if(osMessageQueuePut(messagequeueHandle, &msg, 0, osWaitForever) == osOK)
+			switch(event.event_type)
 			{
-				__NOP();
+				case EVENT_BUTTON_PRESSED: 	printf("Button Pressed\n");
+											if(osMessageQueuePut(messagequeueHandle, &event, 0, osWaitForever) == osOK)
+											{
+												__NOP();
+											}
+											else
+											{
+												printf(" Data Send to Message Queue failed\n");
+											}
+											break;
+				case EVENT_BUTTON_RELEASED: printf("Button Released\n");
+											break;
+
 			}
-			else
-			{
-				printf(" Data Send to Message Queue failed\n");
-			}
+
 		}
 		else
 		{
 			printf(" Data Read from Button Queue failed\n");
 		}
+#else
+		if(osSemaphoreAcquire(Button_SempahoreHandle,osWaitForever) == osOK)
+		{
+			osSemaphoreRelease(Led_SempahoreHandle);
+			printf("Button Pressed\n");
+
+		}
+#endif
 		uiTaskCounter++;
 		printf("UserInputTask Executed : %ld\n", uiTaskCounter);
 		osDelay(1000);
