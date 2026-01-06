@@ -19,10 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "queue.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stddef.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,8 +39,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-//#define _USING_QUEUE_
-#define _USING_SEMAPHORE_
+#define _USING_QUEUE_
+//#define _USING_SEMAPHORE_
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -103,7 +105,6 @@ void UserInputTask(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 /* USER CODE END 0 */
 
 /**
@@ -113,66 +114,32 @@ void UserInputTask(void *argument);
 int main(void)
 {
 
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
   /* Configure the system clock */
   SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  /* USER CODE BEGIN 2 */
-
-  /* USER CODE END 2 */
 
   /* Init scheduler */
   osKernelInitialize();
 
-  /* USER CODE BEGIN RTOS_MUTEX */
-  /* add mutexes, ... */
-  /* USER CODE END RTOS_MUTEX */
-#ifdef _USING_SEMAPHORE_
   /* Create the semaphores(s) */
   /* creation of Button_Sempahore */
   Button_SempahoreHandle = osSemaphoreNew(1, 1, &Button_Sempahore_attributes);
 
-  /* creation of Led_Sempahore */
-  Led_SempahoreHandle = osSemaphoreNew(1, 1, &Led_Sempahore_attributes);
-#endif
 
-  /* USER CODE BEGIN RTOS_SEMAPHORES */
-  /* add semaphores, ... */
-  /* USER CODE END RTOS_SEMAPHORES */
-
-  /* USER CODE BEGIN RTOS_TIMERS */
-  /* start timers, add new ones, ... */
-  /* USER CODE END RTOS_TIMERS */
-#ifdef _USING_QUEUE_
   /* Create the queue(s) */
-  /* creation of Buttonqueue */
-  ButtonqueueHandle = osMessageQueueNew (16, sizeof(uint8_t), &Buttonqueue_attributes);
-
   /* creation of messagequeue */
-  messagequeueHandle = osMessageQueueNew (16, sizeof(uint16_t), &messagequeue_attributes);
-#endif
+  messagequeueHandle = osMessageQueueNew (16, sizeof(BUTTON_EVENT*), &messagequeue_attributes);
 
-  /* USER CODE BEGIN RTOS_QUEUES */
-  /* add queues, ... */
-  /* USER CODE END RTOS_QUEUES */
+
 
   /* Create the thread(s) */
   /* creation of Blinkled */
@@ -181,13 +148,6 @@ int main(void)
   /* creation of UserInput */
   UserInputHandle = osThreadNew(UserInputTask, NULL, &UserInput_attributes);
 
-  /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
-  /* USER CODE END RTOS_THREADS */
-
-  /* USER CODE BEGIN RTOS_EVENTS */
-  /* add events, ... */
-  /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
   osKernelStart();
@@ -195,14 +155,11 @@ int main(void)
   /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
   }
-  /* USER CODE END 3 */
+
 }
 
 /**
@@ -297,110 +254,75 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	if (GPIO_Pin == GPIO_PIN_13)
 	{
-#ifdef _USING_QUEUE_
-		BUTTON_EVENT event = {EVENT_BUTTON_PRESSED, Button_Pin};
-		osMessageQueuePut(ButtonqueueHandle, &event, 0, 0); // ISR‑safe (timeout=0)
-#else
 		osSemaphoreRelease(Button_SempahoreHandle);
-#endif
 	}
 }
 
-/* USER CODE END 4 */
-
-/* USER CODE BEGIN Header_BlinkTask */
 /**
   * @brief  Function implementing the Blinkled thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_BlinkTask */
 void BlinkTask(void *argument)
 {
-  /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-	BUTTON_EVENT event = {0, 0};
+	BUTTON_EVENT *event = NULL;
 	uint32_t uiTaskCounter = 0;
 	for(;;)
 	{
-#ifdef _USING_QUEUE_
 		if(osMessageQueueGet(messagequeueHandle, &event, 0, osWaitForever) == osOK)
 		{
-		   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-		   printf("Led Toggle\n");
+			if (event != NULL)
+			{
+				HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+				printf("Led Toggle\n");
+				vPortFree(event);
+			}
 		}
 		else
 		{
 			printf(" Data Read from Message Queue failed\n");
 		}
-#else
-		if(osSemaphoreAcquire(Led_SempahoreHandle,osWaitForever) == osOK)
-		{
-			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-
-		}
-#endif
 		uiTaskCounter++;
 		printf("BlinkTask Executed : %ld\n", uiTaskCounter);
 		osDelay(1000);
 	}
-  /* USER CODE END 5 */
 }
-
-/* USER CODE BEGIN Header_UserInputTask */
 /**
 * @brief Function implementing the UserInput thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_UserInputTask */
 void UserInputTask(void *argument)
 {
-  /* USER CODE BEGIN UserInputTask */
-  /* Infinite loop */
-	BUTTON_EVENT event = {0, 0};
+
 	uint32_t uiTaskCounter = 0;
 	for(;;)
 	{
-
-#ifdef _USING_QUEUE_
-		if(osMessageQueueGet(ButtonqueueHandle, &event, 0, osWaitForever) == osOK)
+		if(osSemaphoreAcquire(Button_SempahoreHandle,osWaitForever) == osOK)
 		{
-			switch(event.event_type)
+
+			printf("Button Pressed\n");
+			BUTTON_EVENT *event = pvPortMalloc(sizeof(BUTTON_EVENT));
+			if (event != NULL)
 			{
-				case EVENT_BUTTON_PRESSED: 	printf("Button Pressed\n");
-											if(osMessageQueuePut(messagequeueHandle, &event, 0, osWaitForever) == osOK)
-											{
-												__NOP();
-											}
-											else
-											{
-												printf(" Data Send to Message Queue failed\n");
-											}
-											break;
-				case EVENT_BUTTON_RELEASED: printf("Button Released\n");
-											break;
+			    event->event_type = EVENT_BUTTON_PRESSED;
+			    event->usGpio = GPIO_PIN_5;
+				if(osMessageQueuePut(messagequeueHandle, &event, 0, osWaitForever) == osOK)
+				{
+					__NOP();
+				}
+				else
+				{
+					printf(" Data Send to Message Queue failed\n");
+				}
 
 			}
 
 		}
-		else
-		{
-			printf(" Data Read from Button Queue failed\n");
-		}
-#else
-		if(osSemaphoreAcquire(Button_SempahoreHandle,osWaitForever) == osOK)
-		{
-			osSemaphoreRelease(Led_SempahoreHandle);
-			printf("Button Pressed\n");
-
-		}
-#endif
 		uiTaskCounter++;
 		printf("UserInputTask Executed : %ld\n", uiTaskCounter);
 		osDelay(1000);
 	}
-  /* USER CODE END UserInputTask */
 }
 
 /**
